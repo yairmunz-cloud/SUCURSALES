@@ -61,7 +61,7 @@ def cargar_datos(sheet_id_override=None):
                 sh = client.open_by_key(sid)
                 ws = None
                 # Priorizar BDSUCURSALES2 que es donde esta tu copia
-                for name_try in ["BDSUCURSALES2", "BDSUCURSALES", "BDSUCURSALESPRO", "Hoja1", "Sheet1"]:
+                for name_try in ["BDSUCURSALES", "BDSUCURSALES2", "BDSUCURSALESPRO", "Hoja1", "Sheet1"]:
                     try:
                         ws = sh.worksheet(name_try)
                         break
@@ -134,30 +134,6 @@ def deduplicar_df(df_in):
         return df_in
 
 df_raw = cargar_datos()
-
-# DEBUG: mostrar que pestaña y datos crudos de PUEBLA
-try:
-    if "gcp_service_account" in st.secrets:
-        import gspread
-        from google.oauth2.service_account import Credentials
-        creds_dbg = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
-        client_dbg = gspread.authorize(creds_dbg)
-        sh_dbg = client_dbg.open_by_key(st.secrets.get("sheet_id", ""))
-        ws_list = [ws.title for ws in sh_dbg.worksheets()]
-        st.info(f"Pestanas encontradas en Sheet {st.secrets.get('sheet_id','')[:10]}...: {ws_list}")
-        for ws_name in ws_list:
-            try:
-                ws_tmp = sh_dbg.worksheet(ws_name)
-                vals = ws_tmp.get_all_values()
-                # buscar fila PUEBLA
-                for r in vals:
-                    if len(r)>=2 and "PUEBLA" in str(r).upper() and "PUEBLA" in str(r[1]).upper() if len(r)>1 else False:
-                        st.warning(f"En pestana {ws_name} fila PUEBLA cruda: {r[:6]}")
-                        break
-            except:
-                pass
-except Exception as e:
-    st.error(f"Debug error: {e}")
 
 
 def buscar_col_temp(kws, df_ref):
@@ -375,7 +351,7 @@ def eliminar_reporte_hoja1(estado, sucursal, no_reporte_actual, indice_a_borrar=
             sheet_id = st.secrets.get("sheet_id", SHEET_ID_PRUEBAS)
             sh = client.open_by_key(sheet_id)
             ws_main = None
-            for name_try in ["BDSUCURSALES2", "BDSUCURSALES", "BDSUCURSALESPRO", "Hoja1"]:
+            for name_try in ["BDSUCURSALES", "BDSUCURSALES2", "BDSUCURSALESPRO", "Hoja1"]:
                 try:
                     ws_main = sh.worksheet(name_try)
                     break
@@ -492,7 +468,6 @@ else:
     total_reps_global = 0
 opciones_con_todos = ["-- Ver todas las sucursales --"] + opciones_activas
 
-st.caption(f"SHEET_ID: {str(st.secrets.get('sheet_id', 'NO SET'))[:50]}")
 c1, c2 = st.columns([2.2, 1.3])
 
 with c1:
