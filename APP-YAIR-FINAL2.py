@@ -47,7 +47,7 @@ SHEET_ID_PRUEBAS = "12uBzVEE5ZqO7V6OIKSlCTB7BdSQWk_3sn12LhFdMWg4"
 def norm(s):
     return str(s).strip().upper().replace("  "," ").replace("\n","").replace("\r","")
 
-@st.cache_data(ttl=10, show_spinner=False)
+@st.cache_data(ttl=0, show_spinner=False)
 def cargar_datos(sheet_id_override=None):
     df_privado = None
     try:
@@ -134,6 +134,31 @@ def deduplicar_df(df_in):
         return df_in
 
 df_raw = cargar_datos()
+
+# DEBUG: mostrar que pestaña y datos crudos de PUEBLA
+try:
+    if "gcp_service_account" in st.secrets:
+        import gspread
+        from google.oauth2.service_account import Credentials
+        creds_dbg = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
+        client_dbg = gspread.authorize(creds_dbg)
+        sh_dbg = client_dbg.open_by_key(st.secrets.get("sheet_id", ""))
+        ws_list = [ws.title for ws in sh_dbg.worksheets()]
+        st.info(f"Pestanas encontradas en Sheet {st.secrets.get('sheet_id','')[:10]}...: {ws_list}")
+        for ws_name in ws_list:
+            try:
+                ws_tmp = sh_dbg.worksheet(ws_name)
+                vals = ws_tmp.get_all_values()
+                # buscar fila PUEBLA
+                for r in vals:
+                    if len(r)>=2 and "PUEBLA" in str(r).upper() and "PUEBLA" in str(r[1]).upper() if len(r)>1 else False:
+                        st.warning(f"En pestana {ws_name} fila PUEBLA cruda: {r[:6]}")
+                        break
+            except:
+                pass
+except Exception as e:
+    st.error(f"Debug error: {e}")
+
 
 def buscar_col_temp(kws, df_ref):
     for c in df_ref.columns:
@@ -467,6 +492,7 @@ else:
     total_reps_global = 0
 opciones_con_todos = ["-- Ver todas las sucursales --"] + opciones_activas
 
+st.caption(f"SHEET_ID: {str(st.secrets.get('sheet_id', 'NO SET'))[:50]}")
 c1, c2 = st.columns([2.2, 1.3])
 
 with c1:
@@ -521,14 +547,18 @@ if not es_modo_agregar:
     f1, f2, f3 = st.columns([1.1, 1.8, 0.7], gap="medium")
     with f1:
         st.markdown('<div class="filter-pill"><div class="filter-label"> Estado</div>', unsafe_allow_html=True)
-        estado_actual = st.selectbox("Estado", lista_estados, index=default_est_idx, key="estado_real", label_visibility="collapsed")
+        if "estado_real" not in st.session_state:
+            st.session_state["estado_real"] = lista_estados[default_est_idx] if lista_estados else ""
+        estado_actual = st.selectbox("Estado", lista_estados, key="estado_real", label_visibility="collapsed")
         st.markdown('</div>', unsafe_allow_html=True)
     df_estado = df[df[COL_EST] == estado_actual] if COL_EST else df
     lista_suc = sorted(df_estado[COL_SUC].dropna().unique()) if COL_SUC else []
     with f2:
         st.markdown(f'<div class="filter-pill"><div class="filter-label">🏬 Sucursales • {len(lista_suc)} en {estado_actual}</div>', unsafe_allow_html=True)
         idx_suc = lista_suc.index(default_suc) if default_suc and default_suc in lista_suc else 0
-        sucursal_actual = st.selectbox("Sucursales", lista_suc, index=idx_suc, key="sucursal_real", label_visibility="collapsed")
+        if "sucursal_real" not in st.session_state:
+            st.session_state["sucursal_real"] = lista_suc[idx_suc] if lista_suc else ""
+        sucursal_actual = st.selectbox("Sucursales", lista_suc, key="sucursal_real", label_visibility="collapsed")
         st.markdown('</div>', unsafe_allow_html=True)
     with f3:
         st.markdown('<div class="filter-pill"><div class="filter-label">⚡ Acciones</div>', unsafe_allow_html=True)
