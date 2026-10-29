@@ -556,10 +556,6 @@ if not es_modo_agregar:
         st.markdown('</div>', unsafe_allow_html=True)
     df_estado = df[df[COL_EST] == estado_actual] if COL_EST else df
     lista_suc = sorted(df_estado[COL_SUC].dropna().unique()) if COL_SUC else []
-    # FIX: si la sucursal actual no pertenece al nuevo estado, resetearla
-    if lista_suc and st.session_state.get("sucursal_real") not in lista_suc:
-        st.session_state["sucursal_real"] = lista_suc[0]
-        st.rerun()
     with f2:
         st.markdown(f'<div class="filter-pill"><div class="filter-label">🏬 Sucursales • {len(lista_suc)} en {estado_actual}</div>', unsafe_allow_html=True)
         idx_suc = lista_suc.index(default_suc) if default_suc and default_suc in lista_suc else 0
