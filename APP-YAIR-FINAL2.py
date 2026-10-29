@@ -811,7 +811,8 @@ if st.session_state['admin_auth'] and st.session_state['show_add_form']:
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# --- DETALLE MULTI-REPORTE ---
+
+# --- DETALLE MULTI-REPORTE - CON TELEFONOS ---
 if not st.session_state.get('show_add_form', False):
     if 'estado_real' in st.session_state and 'sucursal_real' in st.session_state and COL_EST and COL_SUC:
         estado_sel = st.session_state['estado_real']
@@ -828,6 +829,7 @@ if not st.session_state.get('show_add_form', False):
                     reps_list = split_multi_val(rep_raw)
                     fecs_list = split_multi_val(fec_raw)
                     obs_list = split_multi_val(obs_raw)
+                    
                     if not reps_list:
                         st.markdown(f"<div class='glass' style='padding:16px; border-left:5px solid #16a34a;'><b>{suc_sel}</b> - {estado_sel} | Sin reporte activo</div>", unsafe_allow_html=True)
                     else:
@@ -836,8 +838,8 @@ if not st.session_state.get('show_add_form', False):
                             fec = fecs_list[idx_rep] if idx_rep < len(fecs_list) else (fecs_list[0] if fecs_list else "")
                             obs = obs_list[idx_rep] if idx_rep < len(obs_list) else (obs_list[0] if obs_list else obs_raw)
                             dias, txt_dias = dias_desde(fec) if tiene_reporte(rep) else (None, "Sin fecha")
-                            badge = txt_dias if dias is None else f"{dias} dias"
-                            st.markdown(f"<div class='glass' style='padding:12px; margin-bottom:2px; border-left:4px solid #ef4444;'><b>{idx_rep+1}. REP: {rep}</b> | {fec} | {badge}<br><small>{obs[:200]}</small></div>", unsafe_allow_html=True)
+                            badge = txt_dias if dias is None else f"{dias} dias - {txt_dias}"
+                            st.markdown(f"<div class='glass' style='padding:12px; margin-bottom:2px; border-left:4px solid #ef4444;'><b>{idx_rep+1}. REP: {rep}</b> | {fec} | {badge}<br><small>FALLA: {obs[:250]}</small></div>", unsafe_allow_html=True)
                             c1, c2 = st.columns([3,1])
                             with c2:
                                 if st.button(f"CERRAR {rep}", key=f"cerrar_{estado_sel}_{suc_sel}_{idx_rep}_{rep}"):
@@ -849,10 +851,19 @@ if not st.session_state.get('show_add_form', False):
                                         st.session_state['show_delete_confirm'] = True
                                         st.session_state['show_delete_login'] = False
                                     st.rerun()
-
-
+                    
+                    # --- BLOQUE TELEFONOS RESTAURADO ---
+                    if tels:
+                        st.markdown(f"<div style='margin-top:14px; font-weight:800; font-size:0.85rem; color:#0f172a;'>📞 Lineas Telmex ({len(tels)}) - {suc_sel}</div>", unsafe_allow_html=True)
+                        t_cols = st.columns(3)
+                        for i, tel in enumerate(tels):
+                            with t_cols[i % 3]:
+                                st.markdown(f"<div style='background:white; border:1px solid #e2e8f0; padding:8px 12px; border-radius:8px; margin:4px 0; font-size:0.85rem; font-weight:600;'>📞 {tel}</div>", unsafe_allow_html=True)
+                    else:
+                        st.info(f"Sin lineas registradas - {tel_raw if tel_raw else 'No hay dato TEL en Sheets'}")
 
 # --- MODAL LOGIN CERRAR REPORTE ---
+
 if st.session_state.get('show_delete_login') and not st.session_state.get('admin_auth'):
     st.markdown('<div class="glass" style="border:2px solid #dc2626; padding:24px; margin-top:16px; background:rgba(254,242,242,0.95) !important;">', unsafe_allow_html=True)
     st.markdown("### 🔒 Login para CERRAR REPORTE")
