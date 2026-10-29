@@ -337,7 +337,7 @@ def eliminar_reporte_hoja1(estado, sucursal, no_reporte_actual, indice_a_borrar=
                     return ""
                 s = ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
                 s = s.upper()
-                s = s.replace("  ", " ")
+                s = re.sub(r'\s+', ' ', s)
                 return s.strip()
             creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
             client = gspread.authorize(creds)
@@ -423,7 +423,6 @@ def eliminar_reporte_hoja1(estado, sucursal, no_reporte_actual, indice_a_borrar=
         return False, str(e)
 
 
-
 lista_estados = sorted(df[COL_EST].dropna().unique()) if COL_EST in df.columns else []
 df_reportes = df[df[COL_REP].apply(tiene_reporte)] if COL_REP and COL_REP in df.columns else pd.DataFrame()
 
@@ -437,25 +436,26 @@ if 'filtro_activo_sel' not in st.session_state: st.session_state['filtro_activo_
 # --- PREPARAR OPCIONES REPORTES ACTIVOS ---
 opciones_activas = []
 mapa_activos = {}
+mapa_activos_global = {}
+total_reportes_individuales_calc = 0
+try:
+    for _v in df_reportes[COL_REP].tolist() if not df_reportes.empty and COL_REP in df_reportes.columns else []:
+        total_reportes_individuales_calc += len(split_multi_val(_v)) if split_multi_val(_v) else (1 if tiene_reporte(_v) else 0)
+except:
+    total_reportes_individuales_calc = len(df_reportes)
 if not df_reportes.empty:
     for _, row in df_reportes.iterrows():
         estado = str(row.get(COL_EST, "")).strip()
         suc = str(row.get(COL_SUC, "")).strip()
-        rep_raw = str(row.get(COL_REP, "")).strip()
-        fec_raw = str(row.get(COL_FEC, "")).strip()
-        reps = split_multi_val(rep_raw)
-        fecs = split_multi_val(fec_raw)
-        if not reps:
-            reps = [rep_raw]
-        for idx, rep in enumerate(reps):
-            fec = fecs[idx] if idx < len(fecs) else fec_raw
-            dias, txt_dias = dias_desde(fec) if tiene_reporte(rep) else (None, "Sin fecha")
-            label = f"{suc} - {estado} | REP: {rep} | {txt_dias}" + (f" [{idx+1}/{len(reps)}]" if len(reps)>1 else "")
-            opciones_activas.append(label)
-            mapa_activos[label] = {"estado": estado, "sucursal": suc, "row": row}
+        rep = str(row.get(COL_REP, "")).strip()
+        fec = str(row.get(COL_FEC, "")).strip()
+        dias, txt_dias = dias_desde(fec) if tiene_reporte(rep) else (None, "Sin fecha")
+        label = f"{suc} - {estado} | REP: {rep} | {txt_dias}"
+        opciones_activas.append(label)
+        mapa_activos[label] = {"estado": estado, "sucursal": suc, "row": row}
     opciones_activas = sorted(opciones_activas)
+    mapa_activos_global = mapa_activos
 opciones_con_todos = ["-- Ver todas las sucursales --"] + opciones_activas
-mapa_activos_global = mapa_activos
 
 # HEADER - c1 titulo, c2 reportes + filtro mismo tamaño que negro, sin boton Limpiar, automatico
 c1, c2 = st.columns([2.2, 1.3])
@@ -464,16 +464,8 @@ with c1:
         st.markdown(f"""<div style="display:flex; align-items:center; gap:16px"><div style="width:52px; height:52px; border-radius:14px; overflow:hidden; background:white"><img src="data:image/png;base64,{b64_logo}" style="width:100%; height:100%; object-fit:cover"></div><div style="font-size:2rem; font-weight:900; letter-spacing:-0.8px">SUCURSALES - PRUEBAS</div></div>""", unsafe_allow_html=True)
     else:
         st.markdown(f"""<div style="font-size:2rem; font-weight:900;">SUCURSALES - PRUEBAS</div>""", unsafe_allow_html=True)
-# Calcular total reportes individuales (multi)
-total_reportes_individuales = 0
-try:
-    for v in df_reportes[COL_REP].tolist() if COL_REP in df_reportes.columns else []:
-        total_reportes_individuales += len(split_multi_val(v)) if split_multi_val(v) else (1 if tiene_reporte(v) else 0)
-except:
-    total_reportes_individuales = len(df_reportes)
-
 with c2:
-    st.markdown(f"""<div class="glass-dark"><div style="display:flex; justify-content:space-between; align-items:center"><div style="display:flex; gap:10px; align-items:center"><div style="width:34px; height:34px; background:rgba(239,68,68,0.25); border-radius:9px; display:flex; align-items:center; justify-content:center">🚨</div><div><div style="font-weight:700">Reportes Activos</div><div style="font-size:0.75rem; opacity:0.7">{total_reportes_individuales} requieren atencion ({len(df_reportes)} sucursales)</div></div></div><div style="font-size:1.6rem; font-weight:900">{total_reportes_individuales}</div></div></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="glass-dark"><div style="display:flex; justify-content:space-between; align-items:center"><div style="display:flex; gap:10px; align-items:center"><div style="width:34px; height:34px; background:rgba(239,68,68,0.25); border-radius:9px; display:flex; align-items:center; justify-content:center">🚨</div><div><div style="font-weight:700">Reportes Activos</div><div style="font-size:0.75rem; opacity:0.7">{len(df_reportes)} requieren atencion</div></div></div><div style="font-size:1.6rem; font-weight:900">{len(df_reportes)}</div></div></div>""", unsafe_allow_html=True)
     if not df_reportes.empty:
         st.markdown(f"""
         <div class="glass" style="margin-top:10px; padding:10px 14px; border-left:4px solid #ef4444; background:white !important; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
@@ -482,7 +474,7 @@ with c2:
                     <div style="width:18px; height:18px; background:#ef4444; border-radius:5px; display:flex; align-items:center; justify-content:center; color:white; font-size:10px;">🚨</div>
                     <div style="font-weight:800; font-size:0.68rem; letter-spacing:0.4px; color:#991b1b;">VER SOLO SUCURSALES CON REPORTE ACTIVO</div>
                 </div>
-                <span class="badge badge-red" style="font-size:0.65rem; padding:3px 8px;">{total_reportes_individuales} reportes / {len(df_reportes)} sucursales</span>
+                <span class="badge badge-red" style="font-size:0.65rem; padding:3px 8px;">{len(df_reportes)} encontradas</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -819,7 +811,7 @@ if st.session_state['admin_auth'] and st.session_state['show_add_form']:
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# --- DETALLE MULTI-REPORTE ---
+# --- DETALLE CON FORMATO MEJORADO MULTI + TELEFONOS ORIGINAL ---
 if not st.session_state.get('show_add_form', False):
     if 'estado_real' in st.session_state and 'sucursal_real' in st.session_state and COL_EST and COL_SUC:
         estado_sel = st.session_state['estado_real']
@@ -836,19 +828,106 @@ if not st.session_state.get('show_add_form', False):
                     reps_list = split_multi_val(rep_raw)
                     fecs_list = split_multi_val(fec_raw)
                     obs_list = split_multi_val(obs_raw)
+                    
+                    # Si no hay multi, usar valor unico como antes
                     if not reps_list:
-                        st.markdown(f"<div class='glass' style='padding:16px; border-left:5px solid #16a34a;'><b>{suc_sel}</b> - {estado_sel} | Sin reporte activo</div>", unsafe_allow_html=True)
+                        reps_list = []
+                    
+                    if not reps_list:
+                        # SIN REPORTE - mantener estilo verde original
+                        rep = ""
+                        fec = ""
+                        obs = obs_raw
+                        dias, txt_dias = None, "Sin reporte"
+                        badge_html = '<span class="badge badge-ok">Sin reporte</span>'
+                        rep_display = '<span class="rep-box" style="background:#f0fdf4; color:#166534;">✅ Sin REP</span>'
+                        fecha_display = '<span class="rep-box">📅 Fecha: N/A</span>'
+                        estado_display = f'<span class="rep-box" style="background:#0f172a; color:white; border-color:#0f172a;">📍 {estado_sel}</span>'
+                        border_color = "#16a34a"
+                        border_bg = "rgba(240,253,244,0.5)"
+                        st.markdown(f"""
+                        <div class="glass" style="padding:20px; border-left:5px solid {border_color}; background: {border_bg} !important;">
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+                                <div style="display:flex; gap:14px; align-items:flex-start;">
+                                    <div style="width:42px; height:42px; background:#0f172a; color:white; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px;">🏢</div>
+                                    <div>
+                                        <div style="font-size:1.2rem; font-weight:900; color:#0f172a; letter-spacing:-0.5px;">{suc_sel}</div>
+                                        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+                                            {estado_display}
+                                            {rep_display}
+                                            {fecha_display}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="text-align:right;">
+                                    {badge_html}
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
                     else:
-                        st.markdown(f"<div style='background:#0f172a; color:white; padding:8px 14px; border-radius:8px; margin-bottom:4px; display:flex; justify-content:space-between;'><b>{suc_sel} - {estado_sel}</b><span style='background:#ef4444; padding:2px 8px; border-radius:12px; font-size:0.7rem;'>{len(reps_list)} REPORTE(S)</span></div>", unsafe_allow_html=True)
+                        # CON MULTI-REPORTE - repetir tarjeta original por cada reporte
                         for idx_rep, rep in enumerate(reps_list):
                             fec = fecs_list[idx_rep] if idx_rep < len(fecs_list) else (fecs_list[0] if fecs_list else "")
                             obs = obs_list[idx_rep] if idx_rep < len(obs_list) else (obs_list[0] if obs_list else obs_raw)
                             dias, txt_dias = dias_desde(fec) if tiene_reporte(rep) else (None, "Sin fecha")
-                            badge = txt_dias if dias is None else f"{dias} dias"
-                            st.markdown(f"<div class='glass' style='padding:12px; margin-bottom:2px; border-left:4px solid #ef4444;'><b>{idx_rep+1}. REP: {rep}</b> | {fec} | {badge}<br><small>{obs[:200]}</small></div>", unsafe_allow_html=True)
-                            c1, c2 = st.columns([3,1])
-                            with c2:
-                                if st.button(f"CERRAR {rep}", key=f"cerrar_{estado_sel}_{suc_sel}_{idx_rep}_{rep}"):
+                            if not tiene_reporte(rep):
+                                badge_html = '<span class="badge badge-ok">Sin reporte</span>'
+                            else:
+                                if dias is None:
+                                    badge_html = f'<span class="badge badge-warn">{txt_dias}</span>'
+                                elif dias <= 2:
+                                    badge_html = f'<span class="badge badge-warn">{dias} dias</span>'
+                                elif dias <= 5:
+                                    badge_html = f'<span class="badge badge-orange">{dias} dias</span>'
+                                else:
+                                    badge_html = f'<span class="badge badge-red">{txt_dias}</span>'
+                            rep_display = f'<span class="rep-box">🗂️ REP: {rep}</span>' if tiene_reporte(rep) else '<span class="rep-box" style="background:#f0fdf4; color:#166534;">✅ Sin REP</span>'
+                            fecha_display = f'<span class="rep-box">📅 Fecha: {fec}</span>' if fec and fec.lower() not in ['nan','none',''] else '<span class="rep-box">📅 Fecha: N/A</span>'
+                            estado_display = f'<span class="rep-box" style="background:#0f172a; color:white; border-color:#0f172a;">📍 {estado_sel}</span>'
+                            border_color = "#ef4444"
+                            border_bg = "rgba(254,242,242,0.5)"
+                            st.markdown(f"""
+                            <div class="glass" style="padding:20px; border-left:5px solid {border_color}; background: {border_bg} !important; margin-bottom:10px;">
+                                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+                                    <div style="display:flex; gap:14px; align-items:flex-start;">
+                                        <div style="width:42px; height:42px; background:#0f172a; color:white; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px;">🏢</div>
+                                        <div>
+                                            <div style="font-size:1.2rem; font-weight:900; color:#0f172a; letter-spacing:-0.5px;">{suc_sel} - REP {idx_rep+1}/{len(reps_list)}</div>
+                                            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+                                                {estado_display}
+                                                {rep_display}
+                                                {fecha_display}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="text-align:right;">
+                                        {badge_html}
+                                    </div>
+                                </div>
+                                <div style="margin-top:14px; display:flex; gap:12px; align-items:stretch;">
+                                    <div style="flex:2; padding:12px 14px; background:#f8fafc; border:1px solid #f1f5f9; border-radius:10px;">
+                                        <div style="font-size:0.70rem; font-weight:800; color:#64748b; letter-spacing:0.6px; margin-bottom:4px;">📝 FALLA REPORTADA ({idx_rep+1})</div>
+                                        <div style="color:#1e293b; font-size:0.92rem;">{obs if obs and obs.lower()!='nan' else 'Sin observaciones'}</div>
+                                    </div>
+                                    <div style="flex:1; min-width:200px;">
+                                        <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:10px; padding:10px 12px; height:100%; display:flex; flex-direction:column; justify-content:center;">
+                                            <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+                                                <div style="width:22px; height:22px; background:#ef4444; border-radius:6px; display:flex; align-items:center; justify-content:center; color:white; font-size:12px;">⚠️</div>
+                                                <div style="font-weight:800; font-size:0.75rem; color:#b91c1c;">REPORTE ACTIVO {idx_rep+1}</div>
+                                            </div>
+                                            <div style="font-size:0.65rem; color:#7f1d1d; line-height:1.2;">REP: {rep} | {txt_dias}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
+                            c_btn1, c_btn2 = st.columns([2.2, 0.8])
+                            with c_btn1:
+                                st.markdown(f"<div style='font-size:0.70rem; color:#64748b; padding-top:8px;'>💡 Reporte {idx_rep+1} de {len(reps_list)} - {rep} | Al cerrar solo se borra este.</div>", unsafe_allow_html=True)
+                            with c_btn2:
+                                if st.button(f"✅ CERRAR REPORTE {rep}", key=f"btn_cerrar_{estado_sel}_{suc_sel}_{rep}_{idx_rep}", type="primary", use_container_width=True):
                                     st.session_state['delete_target'] = {"estado": estado_sel, "sucursal": suc_sel, "rep": rep, "fec": fec, "obs": obs, "tel": tel_raw, "indice": idx_rep}
                                     if not st.session_state.get('admin_auth'):
                                         st.session_state['show_delete_login'] = True
@@ -857,6 +936,21 @@ if not st.session_state.get('show_add_form', False):
                                         st.session_state['show_delete_confirm'] = True
                                         st.session_state['show_delete_login'] = False
                                     st.rerun()
+                            st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+
+                    # TELEFONOS - RESTAURADO ORIGINAL
+                    if tel_raw:
+                        # usar split_tels ya existente
+                        if tels:
+                            st.markdown(f'<div style="margin-top:8px; font-weight:700; font-size:0.9rem;">📞 Lineas Telmex ({len(tels)}) - {suc_sel}</div>', unsafe_allow_html=True)
+                            t_cols = st.columns(3)
+                            for i, tel in enumerate(tels):
+                                with t_cols[i % 3]:
+                                    st.markdown(f'<div style="background:white; border:1px solid #e2e8f0; padding:8px 12px; border-radius:8px; margin:4px 0; font-size:0.85rem; font-weight:600;">📞 {tel}</div>', unsafe_allow_html=True)
+                        else:
+                            st.info(f"Sin lineas registradas - {tel_raw}")
+                    else:
+                        st.info(f"Selecciona sucursal para ver detalle")
 
 
 
