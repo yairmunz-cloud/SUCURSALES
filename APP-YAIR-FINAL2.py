@@ -47,7 +47,7 @@ SHEET_ID_PRUEBAS = "12uBzVEE5ZqO7V6OIKSlCTB7BdSQWk_3sn12LhFdMWg4"
 def norm(s):
     return str(s).strip().upper().replace("  "," ").replace("\n","").replace("\r","")
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False)
 def cargar_datos(sheet_id_override=None):
     df_privado = None
     try:
@@ -60,7 +60,8 @@ def cargar_datos(sheet_id_override=None):
             if sid:
                 sh = client.open_by_key(sid)
                 ws = None
-                for name_try in ["BDSUCURSALES2", "BDSUCURSALES"]:
+                # Priorizar BDSUCURSALES2 que es donde esta tu copia
+                for name_try in ["BDSUCURSALES2", "BDSUCURSALES", "BDSUCURSALESPRO", "Hoja1", "Sheet1"]:
                     try:
                         ws = sh.worksheet(name_try)
                         break
@@ -68,16 +69,13 @@ def cargar_datos(sheet_id_override=None):
                         continue
                 if not ws:
                     ws = sh.sheet1
-                # IMPORTANTE: get_all_values preserva " | "
                 all_vals = ws.get_all_values()
                 if all_vals and len(all_vals) > 1:
                     headers = [h.strip().upper() for h in all_vals[0]]
                     rows = all_vals[1:]
                     df_tmp = pd.DataFrame(rows, columns=headers)
-                    # no dropna con conversion, mantener strings exactos
                     df_tmp = df_tmp.replace('', pd.NA)
                     df_tmp = df_tmp.dropna(how='all')
-                    # convertir pd.NA a "" para split
                     df_tmp = df_tmp.fillna("")
                     if len(df_tmp) >= 1:
                         df_privado = df_tmp
@@ -86,12 +84,12 @@ def cargar_datos(sheet_id_override=None):
     if df_privado is not None and not df_privado.empty and len(df_privado) > 5:
         return df_privado
     try:
-        base_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTyWdMEtPBo7u4r6df8shaedXk8783RUOdOPsjLwIh1xz4nLHdAdaheYFMB1-CLI2XtzpzLa7SQXm/pub?output=csv"
+        base_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTySrWdMEtPBo7u4r6df8shaedXk8783RUOdOPsjLwIh1xz4nLHdAdaheYFMB1-CLI2XtzpzLa7SQXm/pub?output=csv"
         url = f"{base_url}&cb={int(time.time())}"
         df = pd.read_csv(url, dtype=str)
         df.columns = df.columns.str.strip().str.upper()
         return df.dropna(how='all').fillna("")
-    except Exception as e:
+    except:
         if df_privado is not None:
             return df_privado
         return pd.DataFrame(columns=["ESTADO","SUCURSAL","TELMEX","NO. REPORTE","FECHA","OBSERVACIONES"])
@@ -183,7 +181,6 @@ def split_multi_val(v):
     if not s or s.lower() in ["nan","none",""]:
         return []
     import re as _re
-    # split por pipe
     if "|" in s:
         parts = _re.split(r"\s*\|\s*", s)
     else:
@@ -353,7 +350,7 @@ def eliminar_reporte_hoja1(estado, sucursal, no_reporte_actual, indice_a_borrar=
             sheet_id = st.secrets.get("sheet_id", SHEET_ID_PRUEBAS)
             sh = client.open_by_key(sheet_id)
             ws_main = None
-            for name_try in ["BDSUCURSALES2", "BDSUCURSALES"]:
+            for name_try in ["BDSUCURSALES2", "BDSUCURSALES", "BDSUCURSALESPRO", "Hoja1"]:
                 try:
                     ws_main = sh.worksheet(name_try)
                     break
@@ -446,44 +443,39 @@ if 'filtro_activo_sel' not in st.session_state: st.session_state['filtro_activo_
 opciones_activas = []
 mapa_activos = {}
 mapa_activos_global = {}
+# Conteo real multi
+total_reps_global = 0
 if not df_reportes.empty:
     for _, row in df_reportes.iterrows():
-        estado = str(row.get(COL_EST, "")).strip()
-        suc = str(row.get(COL_SUC, "")).strip()
-        rep = str(row.get(COL_REP, "")).strip()
-        fec = str(row.get(COL_FEC, "")).strip()
-        dias, txt_dias = dias_desde(fec) if tiene_reporte(rep) else (None, "Sin fecha")
-        label = f"{suc} - {estado} | REP: {rep} | {txt_dias}"
-        opciones_activas.append(label)
-        mapa_activos[label] = {"estado": estado, "sucursal": suc, "row": row}
+        rep_raw_full = str(row.get(COL_REP, "")).strip()
+        fec_raw_full = str(row.get(COL_FEC, "")).strip()
+        reps_full = split_multi_val(rep_raw_full)
+        if not reps_full and tiene_reporte(rep_raw_full):
+            reps_full = [rep_raw_full]
+        fecs_full = split_multi_val(fec_raw_full)
+        for idx_rep_full in range(len(reps_full) if reps_full else 1):
+            rep_one = reps_full[idx_rep_full] if idx_rep_full < len(reps_full) else rep_raw_full
+            fec_one = fecs_full[idx_rep_full] if idx_rep_full < len(fecs_full) else fec_raw_full
+            total_reps_global += 1
+            dias, txt_dias = dias_desde(fec_one) if tiene_reporte(rep_one) else (None, "Sin fecha")
+            label = f"{str(row.get(COL_SUC,''))} - {str(row.get(COL_EST,''))} | REP: {rep_one} | {txt_dias} ({idx_rep_full+1}/{len(reps_full)})" if len(reps_full)>1 else f"{str(row.get(COL_SUC,''))} - {str(row.get(COL_EST,''))} | REP: {rep_one} | {txt_dias}"
+            opciones_activas.append(label)
+            mapa_activos[label] = {"estado": str(row.get(COL_EST,"")).strip(), "sucursal": str(row.get(COL_SUC,"")).strip(), "rep": rep_one, "idx": idx_rep_full, "row": row}
     opciones_activas = sorted(opciones_activas)
     mapa_activos_global = mapa_activos
+else:
+    total_reps_global = 0
 opciones_con_todos = ["-- Ver todas las sucursales --"] + opciones_activas
 
-# HEADER - c1 titulo, c2 reportes + filtro mismo tamaño que negro, sin boton Limpiar, automatico
 c1, c2 = st.columns([2.2, 1.3])
+
 with c1:
     if b64_logo:
         st.markdown(f"""<div style="display:flex; align-items:center; gap:16px"><div style="width:52px; height:52px; border-radius:14px; overflow:hidden; background:white"><img src="data:image/png;base64,{b64_logo}" style="width:100%; height:100%; object-fit:cover"></div><div style="font-size:2rem; font-weight:900; letter-spacing:-0.8px">SUCURSALES - PRUEBAS</div></div>""", unsafe_allow_html=True)
     else:
         st.markdown(f"""<div style="font-size:2rem; font-weight:900;">SUCURSALES - PRUEBAS</div>""", unsafe_allow_html=True)
 with c2:
-    col_ref1, col_ref2 = st.columns([4,1])
-    with col_ref1:
-        pass
-    with col_ref2:
-        if st.button("Refrescar", key="btn_refresh_cache", help="Limpia cache y relee Sheets"):
-            st.cache_data.clear()
-            st.rerun()
-    # Conteo real de reportes (split por |)
-    total_reps = 0
-    for v in df_reportes[COL_REP].tolist() if not df_reportes.empty and COL_REP else []:
-        lst = split_multi_val(v)
-        if lst:
-            total_reps += len(lst)
-        elif tiene_reporte(v):
-            total_reps += 1
-    st.markdown(f"""<div class="glass-dark"><div style="display:flex; justify-content:space-between; align-items:center"><div style="display:flex; gap:10px; align-items:center"><div style="width:34px; height:34px; background:rgba(239,68,68,0.25); border-radius:9px; display:flex; align-items:center; justify-content:center">!</div><div><div style="font-weight:700">Reportes Activos</div><div style="font-size:0.75rem; opacity:0.7">{total_reps} requieren atencion ({len(df_reportes)} sucursales)</div></div></div><div style="font-size:1.6rem; font-weight:900">{total_reps}</div></div></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="glass-dark"><div style="display:flex; justify-content:space-between; align-items:center"><div style="display:flex; gap:10px; align-items:center"><div style="width:34px; height:34px; background:rgba(239,68,68,0.25); border-radius:9px; display:flex; align-items:center; justify-content:center">!</div><div><div style="font-weight:700">Reportes Activos</div><div style="font-size:0.75rem; opacity:0.7">{total_reps_global} requieren atencion ({len(df_reportes)} sucursales)</div></div></div><div style="font-size:1.6rem; font-weight:900">{total_reps_global}</div></div></div>""", unsafe_allow_html=True)
     if not df_reportes.empty:
         st.markdown(f"""
         <div class="glass" style="margin-top:10px; padding:10px 14px; border-left:4px solid #ef4444; background:white !important; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
@@ -786,7 +778,6 @@ if st.session_state['admin_auth'] and st.session_state['show_add_form']:
                                 if col_rep_idx: ws_main.update_cell(row_found, col_rep_idx, join_multi_val(ex_reps))
                                 if col_fec_idx: ws_main.update_cell(row_found, col_fec_idx, join_multi_val(ex_fecs))
                                 if col_falla_idx: ws_main.update_cell(row_found, col_falla_idx, join_multi_val(ex_fallas))
-                                # actualizar cache local all_vals
                                 if row_found-1 < len(all_vals):
                                     if col_rep_idx and col_rep_idx-1 < len(all_vals[row_found-1]): all_vals[row_found-1][col_rep_idx-1] = join_multi_val(ex_reps)
                                     if col_fec_idx and col_fec_idx-1 < len(all_vals[row_found-1]): all_vals[row_found-1][col_fec_idx-1] = join_multi_val(ex_fecs)
@@ -830,7 +821,7 @@ if st.session_state['admin_auth'] and st.session_state['show_add_form']:
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# --- DETALLE CON FORMATO ORIGINAL + MULTI-REPORTE ---
+# --- DETALLE MULTI-REPORTE V8 ---
 if not st.session_state.get('show_add_form', False):
     if 'estado_real' in st.session_state and 'sucursal_real' in st.session_state and COL_EST and COL_SUC:
         estado_sel = st.session_state['estado_real']
@@ -847,13 +838,12 @@ if not st.session_state.get('show_add_form', False):
                     reps_list = split_multi_val(rep_raw)
                     fecs_list = split_multi_val(fec_raw)
                     obs_list = split_multi_val(obs_raw)
-                    # Si no tiene reporte
+                    # DEBUG para PUEBLA
+                    if suc_sel == "PUEBLA":
+                        st.caption(f"DEBUG RAW REP: '{rep_raw}' | split={reps_list} | FEC raw='{fec_raw}' split={fecs_list}")
                     if not reps_list or not any(tiene_reporte(r) for r in reps_list):
                         badge_html = '<span class="badge badge-ok">Sin reporte</span>'
-                        rep_display = '<span class="rep-box" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0;">Sin REP</span>'
-                        fecha_display = '<span class="rep-box">Fecha: N/A</span>'
-                        estado_display = f'<span class="rep-box" style="background:#0f172a; color:white; border-color:#0f172a;">{estado_sel}</span>'
-                        st.markdown(f"<div class=\"glass\" style=\"padding:20px; border-left:5px solid #16a34a; background: rgba(240,253,244,0.5) !important;\"><div style=\"display:flex; justify-content:space-between; align-items:flex-start; gap:12px;\"><div style=\"flex:1;\"><div style=\"font-size:1.2rem; font-weight:900; color:#0f172a;\">{suc_sel}</div><div style=\"display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;\">{estado_display} {rep_display} {fecha_display}</div></div><div style=\"flex-shrink:0;\">{badge_html}</div></div></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='glass' style='padding:16px; border-left:5px solid #16a34a;'><b>{suc_sel}</b> - {estado_sel} | Sin reporte activo</div>", unsafe_allow_html=True)
                     else:
                         for idx_rep, rep in enumerate(reps_list):
                             fec = fecs_list[idx_rep] if idx_rep < len(fecs_list) else (fecs_list[0] if fecs_list else "")
@@ -875,13 +865,10 @@ if not st.session_state.get('show_add_form', False):
                                 badge_html = f'<span class="badge badge-red">{txt_dias}</span>'
                                 border_color = "#ef4444"
                                 border_bg = "rgba(254,242,242,0.5)"
-                            rep_display = f'<span class="rep-box">REP: {rep}</span>'
-                            fecha_display = f'<span class="rep-box">Fecha: {fec}</span>' if fec else '<span class="rep-box">Fecha: N/A</span>'
-                            estado_display = f'<span class="rep-box" style="background:#0f172a; color:white; border-color:#0f172a;">{estado_sel}</span>'
-                            st.markdown(f"<div class=\"glass\" style=\"padding:16px 20px; border-left:5px solid {border_color}; background: {border_bg} !important; margin-bottom:10px;\"><div style=\"display:flex; justify-content:space-between; align-items:flex-start; gap:12px;\"><div style=\"flex:1;\"><div style=\"font-size:1.05rem; font-weight:800;\">{suc_sel} - REPORTE {idx_rep+1}/{len(reps_list)}</div><div style=\"display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;\">{estado_display} {rep_display} {fecha_display}</div><div style=\"margin-top:10px; background:white; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:0.85rem;\"><b>FALLA:</b> {obs[:300]}</div></div><div style=\"flex-shrink:0;\">{badge_html}</div></div></div>", unsafe_allow_html=True)
-                            c1, c2 = st.columns([4,1])
-                            with c2:
-                                if st.button(f"CERRAR {rep}", key=f"cerrar_{estado_sel}_{suc_sel}_{idx_rep}_{rep}", type="primary", use_container_width=True):
+                            st.markdown(f"<div class='glass' style='padding:14px; border-left:5px solid {border_color}; background: {border_bg} !important; margin-bottom:8px;'><div style='display:flex; justify-content:space-between;'><div><b>{suc_sel} - REPORTE {idx_rep+1}/{len(reps_list)}</b> | REP: {rep} | Fecha: {fec}</div><div>{badge_html}</div></div><div style='margin-top:8px; background:white; padding:8px; border-radius:6px; font-size:0.85rem;'><b>FALLA:</b> {obs[:300]}</div></div>", unsafe_allow_html=True)
+                            c1b, c2b = st.columns([3,1])
+                            with c2b:
+                                if st.button(f"CERRAR REPORTE {rep}", key=f"cerrar_{estado_sel}_{suc_sel}_{idx_rep}_{rep}", type="primary", use_container_width=True):
                                     st.session_state['delete_target'] = {"estado": estado_sel, "sucursal": suc_sel, "rep": rep, "fec": fec, "obs": obs, "tel": tel_raw, "indice": idx_rep}
                                     if not st.session_state.get('admin_auth'):
                                         st.session_state['show_delete_login'] = True
@@ -890,9 +877,8 @@ if not st.session_state.get('show_add_form', False):
                                         st.session_state['show_delete_confirm'] = True
                                         st.session_state['show_delete_login'] = False
                                     st.rerun()
-                    # Telefonos (una sola vez)
                     if tels:
-                        st.markdown(f'<div style="margin-top:12px; font-weight:700; font-size:0.85rem;">Lineas Telmex ({len(tels)}) - {suc_sel}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div style="margin-top:10px; font-weight:700;">Lineas Telmex ({len(tels)}) - {suc_sel}</div>', unsafe_allow_html=True)
                         cols = st.columns(3)
                         for i, t in enumerate(tels):
                             with cols[i%3]:
