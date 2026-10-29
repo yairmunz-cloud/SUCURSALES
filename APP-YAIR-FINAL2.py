@@ -68,14 +68,18 @@ def cargar_datos(sheet_id_override=None):
                         continue
                 if not ws:
                     ws = sh.sheet1
-                data = ws.get_all_records()
-                if data and len(data) > 0:
-                    df_tmp = pd.DataFrame(data)
-                    df_tmp.columns = df_tmp.columns.str.strip().str.upper()
+                # Usar get_all_values para preservar " | " exacto
+                all_vals = ws.get_all_values()
+                if all_vals and len(all_vals) > 1:
+                    headers = [h.strip().upper() for h in all_vals[0]]
+                    rows = all_vals[1:]
+                    df_tmp = pd.DataFrame(rows, columns=headers)
+                    df_tmp = df_tmp.replace('', pd.NA)
                     df_tmp = df_tmp.dropna(how='all')
                     if len(df_tmp) >= 1:
                         df_privado = df_tmp
-    except:
+    except Exception as e:
+        print(f"Error gspread values: {e}")
         pass
     if df_privado is not None and not df_privado.empty and len(df_privado) > 5:
         return df_privado
@@ -89,6 +93,7 @@ def cargar_datos(sheet_id_override=None):
         if df_privado is not None:
             return df_privado
         return pd.DataFrame(columns=["ESTADO","SUCURSAL","TELMEX","NO. REPORTE","FECHA","OBSERVACIONES"])
+
 
 def deduplicar_df(df_in):
     try:
