@@ -444,29 +444,57 @@ if 'filtro_activo_sel' not in st.session_state: st.session_state['filtro_activo_
 opciones_activas = []
 mapa_activos = {}
 mapa_activos_global = {}
-# Conteo real multi
+# Agrupado por sucursal para no duplicar en dropdown, pero contando reportes
+from collections import defaultdict
+grupo_sucursal = defaultdict(list)  # key -> list de reps
+grupo_info = {}  # key -> row base
+
 total_reps_global = 0
 if not df_reportes.empty:
     for _, row in df_reportes.iterrows():
         rep_raw_full = str(row.get(COL_REP, "")).strip()
-        fec_raw_full = str(row.get(COL_FEC, "")).strip()
         reps_full = split_multi_val(rep_raw_full)
         if not reps_full and tiene_reporte(rep_raw_full):
             reps_full = [rep_raw_full]
-        fecs_full = split_multi_val(fec_raw_full)
-        for idx_rep_full in range(len(reps_full) if reps_full else 1):
-            rep_one = reps_full[idx_rep_full] if idx_rep_full < len(reps_full) else rep_raw_full
-            fec_one = fecs_full[idx_rep_full] if idx_rep_full < len(fecs_full) else fec_raw_full
-            total_reps_global += 1
-            dias, txt_dias = dias_desde(fec_one) if tiene_reporte(rep_one) else (None, "Sin fecha")
-            label = f"{str(row.get(COL_SUC,''))} - {str(row.get(COL_EST,''))} | REP: {rep_one} | {txt_dias} ({idx_rep_full+1}/{len(reps_full)})" if len(reps_full)>1 else f"{str(row.get(COL_SUC,''))} - {str(row.get(COL_EST,''))} | REP: {rep_one} | {txt_dias}"
-            opciones_activas.append(label)
-            mapa_activos[label] = {"estado": str(row.get(COL_EST,"")).strip(), "sucursal": str(row.get(COL_SUC,"")).strip(), "rep": rep_one, "idx": idx_rep_full, "row": row}
+        estado_val = str(row.get(COL_EST,"")).strip()
+        suc_val = str(row.get(COL_SUC,"")).strip()
+        key = (estado_val, suc_val)
+        for rep in reps_full:
+            if tiene_reporte(rep):
+                grupo_sucursal[key].append(rep)
+                total_reps_global += 1
+        if key not in grupo_info:
+            grupo_info[key] = row
+
+    # Crear una sola entrada por sucursal con contador
+    for (estado_val, suc_val), reps_list in grupo_sucursal.items():
+        row_base = grupo_info[(estado_val, suc_val)]
+        count = len(reps_list)
+        # Obtener fecha mas critica para badge
+        fec_raw = str(row_base.get(COL_FEC, "")).strip()
+        fecs = split_multi_val(fec_raw)
+        # dias max
+        max_dias = 0
+        txt_badge = "Hoy"
+        for f in (fecs if fecs else [fec_raw]):
+            d, txt = dias_desde(f) if f else (None, "Sin fecha")
+            if d is not None and d > max_dias:
+                max_dias = d
+                txt_badge = txt
+        # Label agrupado
+        if count == 1:
+            label = f"{estado_val} - {suc_val} | REP: {reps_list[0]} | {txt_badge}"
+        else:
+            # Mostrar primer REP + contador
+            label = f"{estado_val} - {suc_val} | {count} REPORTES | {txt_badge} ({count} activos)"
+        opciones_activas.append(label)
+        mapa_activos[label] = {"estado": estado_val, "sucursal": suc_val, "count": count, "reps": reps_list, "row": row_base}
     opciones_activas = sorted(opciones_activas)
     mapa_activos_global = mapa_activos
 else:
     total_reps_global = 0
 opciones_con_todos = ["-- Ver todas las sucursales --"] + opciones_activas
+
 
 c1, c2 = st.columns([2.2, 1.3])
 
@@ -844,8 +872,6 @@ if not st.session_state.get('show_add_form', False):
                     fecs_list = split_multi_val(fec_raw)
                     obs_list = split_multi_val(obs_raw)
                     # DEBUG para PUEBLA
-                    if suc_sel == "PUEBLA":
-                        st.caption(f"DEBUG RAW REP: '{rep_raw}' | split={reps_list} | FEC raw='{fec_raw}' split={fecs_list}")
                     if not reps_list or not any(tiene_reporte(r) for r in reps_list):
                         badge_html = '<span class="badge badge-ok">Sin reporte</span>'
                         st.markdown(f"<div class='glass' style='padding:16px; border-left:5px solid #16a34a;'><b>{suc_sel}</b> - {estado_sel} | Sin reporte activo</div>", unsafe_allow_html=True)
