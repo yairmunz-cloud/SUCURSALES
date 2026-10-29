@@ -464,8 +464,16 @@ with c1:
         st.markdown(f"""<div style="display:flex; align-items:center; gap:16px"><div style="width:52px; height:52px; border-radius:14px; overflow:hidden; background:white"><img src="data:image/png;base64,{b64_logo}" style="width:100%; height:100%; object-fit:cover"></div><div style="font-size:2rem; font-weight:900; letter-spacing:-0.8px">SUCURSALES - PRUEBAS</div></div>""", unsafe_allow_html=True)
     else:
         st.markdown(f"""<div style="font-size:2rem; font-weight:900;">SUCURSALES - PRUEBAS</div>""", unsafe_allow_html=True)
+# Calcular total reportes individuales (multi)
+total_reportes_individuales = 0
+try:
+    for v in df_reportes[COL_REP].tolist() if COL_REP in df_reportes.columns else []:
+        total_reportes_individuales += len(split_multi_val(v)) if split_multi_val(v) else (1 if tiene_reporte(v) else 0)
+except:
+    total_reportes_individuales = len(df_reportes)
+
 with c2:
-    st.markdown(f"""<div class="glass-dark"><div style="display:flex; justify-content:space-between; align-items:center"><div style="display:flex; gap:10px; align-items:center"><div style="width:34px; height:34px; background:rgba(239,68,68,0.25); border-radius:9px; display:flex; align-items:center; justify-content:center">🚨</div><div><div style="font-weight:700">Reportes Activos</div><div style="font-size:0.75rem; opacity:0.7">{len(df_reportes)} requieren atencion</div></div></div><div style="font-size:1.6rem; font-weight:900">{len(df_reportes)}</div></div></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="glass-dark"><div style="display:flex; justify-content:space-between; align-items:center"><div style="display:flex; gap:10px; align-items:center"><div style="width:34px; height:34px; background:rgba(239,68,68,0.25); border-radius:9px; display:flex; align-items:center; justify-content:center">🚨</div><div><div style="font-weight:700">Reportes Activos</div><div style="font-size:0.75rem; opacity:0.7">{total_reportes_individuales} requieren atencion ({len(df_reportes)} sucursales)</div></div></div><div style="font-size:1.6rem; font-weight:900">{total_reportes_individuales}</div></div></div>""", unsafe_allow_html=True)
     if not df_reportes.empty:
         st.markdown(f"""
         <div class="glass" style="margin-top:10px; padding:10px 14px; border-left:4px solid #ef4444; background:white !important; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
@@ -474,7 +482,7 @@ with c2:
                     <div style="width:18px; height:18px; background:#ef4444; border-radius:5px; display:flex; align-items:center; justify-content:center; color:white; font-size:10px;">🚨</div>
                     <div style="font-weight:800; font-size:0.68rem; letter-spacing:0.4px; color:#991b1b;">VER SOLO SUCURSALES CON REPORTE ACTIVO</div>
                 </div>
-                <span class="badge badge-red" style="font-size:0.65rem; padding:3px 8px;">{len(df_reportes)} encontradas</span>
+                <span class="badge badge-red" style="font-size:0.65rem; padding:3px 8px;">{total_reportes_individuales} reportes / {len(df_reportes)} sucursales</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -811,8 +819,7 @@ if st.session_state['admin_auth'] and st.session_state['show_add_form']:
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-
-# --- DETALLE MULTI-REPORTE - CON TELEFONOS ---
+# --- DETALLE MULTI-REPORTE ---
 if not st.session_state.get('show_add_form', False):
     if 'estado_real' in st.session_state and 'sucursal_real' in st.session_state and COL_EST and COL_SUC:
         estado_sel = st.session_state['estado_real']
@@ -829,7 +836,6 @@ if not st.session_state.get('show_add_form', False):
                     reps_list = split_multi_val(rep_raw)
                     fecs_list = split_multi_val(fec_raw)
                     obs_list = split_multi_val(obs_raw)
-                    
                     if not reps_list:
                         st.markdown(f"<div class='glass' style='padding:16px; border-left:5px solid #16a34a;'><b>{suc_sel}</b> - {estado_sel} | Sin reporte activo</div>", unsafe_allow_html=True)
                     else:
@@ -838,8 +844,8 @@ if not st.session_state.get('show_add_form', False):
                             fec = fecs_list[idx_rep] if idx_rep < len(fecs_list) else (fecs_list[0] if fecs_list else "")
                             obs = obs_list[idx_rep] if idx_rep < len(obs_list) else (obs_list[0] if obs_list else obs_raw)
                             dias, txt_dias = dias_desde(fec) if tiene_reporte(rep) else (None, "Sin fecha")
-                            badge = txt_dias if dias is None else f"{dias} dias - {txt_dias}"
-                            st.markdown(f"<div class='glass' style='padding:12px; margin-bottom:2px; border-left:4px solid #ef4444;'><b>{idx_rep+1}. REP: {rep}</b> | {fec} | {badge}<br><small>FALLA: {obs[:250]}</small></div>", unsafe_allow_html=True)
+                            badge = txt_dias if dias is None else f"{dias} dias"
+                            st.markdown(f"<div class='glass' style='padding:12px; margin-bottom:2px; border-left:4px solid #ef4444;'><b>{idx_rep+1}. REP: {rep}</b> | {fec} | {badge}<br><small>{obs[:200]}</small></div>", unsafe_allow_html=True)
                             c1, c2 = st.columns([3,1])
                             with c2:
                                 if st.button(f"CERRAR {rep}", key=f"cerrar_{estado_sel}_{suc_sel}_{idx_rep}_{rep}"):
@@ -851,19 +857,10 @@ if not st.session_state.get('show_add_form', False):
                                         st.session_state['show_delete_confirm'] = True
                                         st.session_state['show_delete_login'] = False
                                     st.rerun()
-                    
-                    # --- BLOQUE TELEFONOS RESTAURADO ---
-                    if tels:
-                        st.markdown(f"<div style='margin-top:14px; font-weight:800; font-size:0.85rem; color:#0f172a;'>📞 Lineas Telmex ({len(tels)}) - {suc_sel}</div>", unsafe_allow_html=True)
-                        t_cols = st.columns(3)
-                        for i, tel in enumerate(tels):
-                            with t_cols[i % 3]:
-                                st.markdown(f"<div style='background:white; border:1px solid #e2e8f0; padding:8px 12px; border-radius:8px; margin:4px 0; font-size:0.85rem; font-weight:600;'>📞 {tel}</div>", unsafe_allow_html=True)
-                    else:
-                        st.info(f"Sin lineas registradas - {tel_raw if tel_raw else 'No hay dato TEL en Sheets'}")
+
+
 
 # --- MODAL LOGIN CERRAR REPORTE ---
-
 if st.session_state.get('show_delete_login') and not st.session_state.get('admin_auth'):
     st.markdown('<div class="glass" style="border:2px solid #dc2626; padding:24px; margin-top:16px; background:rgba(254,242,242,0.95) !important;">', unsafe_allow_html=True)
     st.markdown("### 🔒 Login para CERRAR REPORTE")
