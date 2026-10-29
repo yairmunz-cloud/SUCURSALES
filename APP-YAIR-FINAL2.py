@@ -68,27 +68,29 @@ def cargar_datos(sheet_id_override=None):
                         continue
                 if not ws:
                     ws = sh.sheet1
-                # Usar get_all_values para preservar " | " exacto
+                # IMPORTANTE: get_all_values preserva " | "
                 all_vals = ws.get_all_values()
                 if all_vals and len(all_vals) > 1:
                     headers = [h.strip().upper() for h in all_vals[0]]
                     rows = all_vals[1:]
                     df_tmp = pd.DataFrame(rows, columns=headers)
+                    # no dropna con conversion, mantener strings exactos
                     df_tmp = df_tmp.replace('', pd.NA)
                     df_tmp = df_tmp.dropna(how='all')
+                    # convertir pd.NA a "" para split
+                    df_tmp = df_tmp.fillna("")
                     if len(df_tmp) >= 1:
                         df_privado = df_tmp
     except Exception as e:
-        print(f"Error gspread values: {e}")
         pass
     if df_privado is not None and not df_privado.empty and len(df_privado) > 5:
         return df_privado
     try:
-        base_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTySrWdMEtPBo7u4r6df8shaedXk8783RUOdOPsjLwIh1xz4nLHdAdaheYFMB1-CLI2XtzpzLa7SQXm/pub?output=csv"
+        base_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTyWdMEtPBo7u4r6df8shaedXk8783RUOdOPsjLwIh1xz4nLHdAdaheYFMB1-CLI2XtzpzLa7SQXm/pub?output=csv"
         url = f"{base_url}&cb={int(time.time())}"
         df = pd.read_csv(url, dtype=str)
         df.columns = df.columns.str.strip().str.upper()
-        return df.dropna(how='all')
+        return df.dropna(how='all').fillna("")
     except Exception as e:
         if df_privado is not None:
             return df_privado
@@ -181,9 +183,11 @@ def split_multi_val(v):
     if not s or s.lower() in ["nan","none",""]:
         return []
     import re as _re
-    parts = _re.split(r"\s*\|\s*", s)
-    if len(parts)==1 and (";" in s or "\n" in s):
-        parts = _re.split(r"\s*;\s*|\n+", s)
+    # split por pipe
+    if "|" in s:
+        parts = _re.split(r"\s*\|\s*", s)
+    else:
+        parts = [s]
     cleaned = [p.strip() for p in parts if p.strip() and p.strip().lower() not in ["nan","none",""]]
     return cleaned
 
@@ -342,7 +346,7 @@ def eliminar_reporte_hoja1(estado, sucursal, no_reporte_actual, indice_a_borrar=
                     return ""
                 s = ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
                 s = s.upper()
-                s = s.replace("  ", " ")
+                s = re.sub(r'\s+', ' ', s)
                 return s.strip()
             creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
             client = gspread.authorize(creds)
@@ -403,7 +407,7 @@ def eliminar_reporte_hoja1(estado, sucursal, no_reporte_actual, indice_a_borrar=
                     if indice_a_borrar < len(fallas): fallas.pop(indice_a_borrar)
                 else:
                     try:
-                        idx = reps.index(str(no_reporte_actual).strip())
+                        idx = [r.strip() for r in reps].index(str(no_reporte_actual).strip())
                         reps.pop(idx)
                         if idx < len(fecs): fecs.pop(idx)
                         if idx < len(fallas): fallas.pop(idx)
@@ -464,22 +468,28 @@ with c1:
     else:
         st.markdown(f"""<div style="font-size:2rem; font-weight:900;">SUCURSALES - PRUEBAS</div>""", unsafe_allow_html=True)
 with c2:
-    if st.button("Refrescar datos", key="btn_refresh"):
-        st.cache_data.clear()
-        st.rerun()
-    total_rep = 0
-    try:
-        for _v in df_reportes[COL_REP].tolist() if not df_reportes.empty and COL_REP in df_reportes.columns else []:
-            total_rep += len(split_multi_val(_v)) if split_multi_val(_v) else (1 if tiene_reporte(_v) else 0)
-    except:
-        total_rep = len(df_reportes)
-    st.markdown(f"<div class='glass-dark'><div style='display:flex; justify-content:space-between;'><div><div style='font-weight:700'>Reportes Activos</div><div style='font-size:0.75rem;'>{total_rep} reportes ({len(df_reportes)} sucursales)</div></div><div style='font-size:1.6rem; font-weight:900;'>{total_rep}</div></div></div>", unsafe_allow_html=True)
+    col_ref1, col_ref2 = st.columns([4,1])
+    with col_ref1:
+        pass
+    with col_ref2:
+        if st.button("Refrescar", key="btn_refresh_cache", help="Limpia cache y relee Sheets"):
+            st.cache_data.clear()
+            st.rerun()
+    # Conteo real de reportes (split por |)
+    total_reps = 0
+    for v in df_reportes[COL_REP].tolist() if not df_reportes.empty and COL_REP else []:
+        lst = split_multi_val(v)
+        if lst:
+            total_reps += len(lst)
+        elif tiene_reporte(v):
+            total_reps += 1
+    st.markdown(f"""<div class="glass-dark"><div style="display:flex; justify-content:space-between; align-items:center"><div style="display:flex; gap:10px; align-items:center"><div style="width:34px; height:34px; background:rgba(239,68,68,0.25); border-radius:9px; display:flex; align-items:center; justify-content:center">!</div><div><div style="font-weight:700">Reportes Activos</div><div style="font-size:0.75rem; opacity:0.7">{total_reps} requieren atencion ({len(df_reportes)} sucursales)</div></div></div><div style="font-size:1.6rem; font-weight:900">{total_reps}</div></div></div>""", unsafe_allow_html=True)
     if not df_reportes.empty:
         st.markdown(f"""
         <div class="glass" style="margin-top:10px; padding:10px 14px; border-left:4px solid #ef4444; background:white !important; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; align-items:center; gap:6px;">
-                    <div style="width:18px; height:18px; background:#ef4444; border-radius:5px; display:flex; align-items:center; justify-content:center; color:white; font-size:10px;"></div>
+                    <div style="width:18px; height:18px; background:#ef4444; border-radius:5px; display:flex; align-items:center; justify-content:center; color:white; font-size:10px;">!</div>
                     <div style="font-weight:800; font-size:0.68rem; letter-spacing:0.4px; color:#991b1b;">VER SOLO SUCURSALES CON REPORTE ACTIVO</div>
                 </div>
                 <span class="badge badge-red" style="font-size:0.65rem; padding:3px 8px;">{len(df_reportes)} encontradas</span>
@@ -776,6 +786,7 @@ if st.session_state['admin_auth'] and st.session_state['show_add_form']:
                                 if col_rep_idx: ws_main.update_cell(row_found, col_rep_idx, join_multi_val(ex_reps))
                                 if col_fec_idx: ws_main.update_cell(row_found, col_fec_idx, join_multi_val(ex_fecs))
                                 if col_falla_idx: ws_main.update_cell(row_found, col_falla_idx, join_multi_val(ex_fallas))
+                                # actualizar cache local all_vals
                                 if row_found-1 < len(all_vals):
                                     if col_rep_idx and col_rep_idx-1 < len(all_vals[row_found-1]): all_vals[row_found-1][col_rep_idx-1] = join_multi_val(ex_reps)
                                     if col_fec_idx and col_fec_idx-1 < len(all_vals[row_found-1]): all_vals[row_found-1][col_fec_idx-1] = join_multi_val(ex_fecs)
@@ -819,7 +830,7 @@ if st.session_state['admin_auth'] and st.session_state['show_add_form']:
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-# --- DETALLE MULTI-REPORTE ---
+# --- DETALLE CON FORMATO ORIGINAL + MULTI-REPORTE ---
 if not st.session_state.get('show_add_form', False):
     if 'estado_real' in st.session_state and 'sucursal_real' in st.session_state and COL_EST and COL_SUC:
         estado_sel = st.session_state['estado_real']
@@ -836,18 +847,41 @@ if not st.session_state.get('show_add_form', False):
                     reps_list = split_multi_val(rep_raw)
                     fecs_list = split_multi_val(fec_raw)
                     obs_list = split_multi_val(obs_raw)
-                    if not reps_list:
-                        st.markdown(f"<div class='glass' style='padding:16px; border-left:5px solid #16a34a;'><b>{suc_sel}</b> - {estado_sel} | Sin reporte activo</div>", unsafe_allow_html=True)
+                    # Si no tiene reporte
+                    if not reps_list or not any(tiene_reporte(r) for r in reps_list):
+                        badge_html = '<span class="badge badge-ok">Sin reporte</span>'
+                        rep_display = '<span class="rep-box" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0;">Sin REP</span>'
+                        fecha_display = '<span class="rep-box">Fecha: N/A</span>'
+                        estado_display = f'<span class="rep-box" style="background:#0f172a; color:white; border-color:#0f172a;">{estado_sel}</span>'
+                        st.markdown(f"<div class=\"glass\" style=\"padding:20px; border-left:5px solid #16a34a; background: rgba(240,253,244,0.5) !important;\"><div style=\"display:flex; justify-content:space-between; align-items:flex-start; gap:12px;\"><div style=\"flex:1;\"><div style=\"font-size:1.2rem; font-weight:900; color:#0f172a;\">{suc_sel}</div><div style=\"display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;\">{estado_display} {rep_display} {fecha_display}</div></div><div style=\"flex-shrink:0;\">{badge_html}</div></div></div>", unsafe_allow_html=True)
                     else:
                         for idx_rep, rep in enumerate(reps_list):
                             fec = fecs_list[idx_rep] if idx_rep < len(fecs_list) else (fecs_list[0] if fecs_list else "")
                             obs = obs_list[idx_rep] if idx_rep < len(obs_list) else (obs_list[0] if obs_list else obs_raw)
                             dias, txt_dias = dias_desde(fec) if tiene_reporte(rep) else (None, "Sin fecha")
-                            badge = txt_dias if dias is None else f"{dias} dias"
-                            st.markdown(f"<div class='glass' style='padding:12px; margin-bottom:6px; border-left:4px solid #ef4444;'><b>{idx_rep+1}. REP: {rep}</b> | {fec} | {badge}<br><small>{obs[:250]}</small></div>", unsafe_allow_html=True)
-                            c1, c2 = st.columns([3,1])
+                            if dias is None:
+                                badge_html = f'<span class="badge badge-warn">{txt_dias}</span>'
+                                border_color = "#f59e0b"
+                                border_bg = "rgba(254,249,195,0.5)"
+                            elif dias <= 2:
+                                badge_html = f'<span class="badge badge-warn">{dias} dias</span>'
+                                border_color = "#f59e0b"
+                                border_bg = "rgba(254,249,195,0.5)"
+                            elif dias <= 5:
+                                badge_html = f'<span class="badge badge-orange">{dias} dias</span>'
+                                border_color = "#f97316"
+                                border_bg = "rgba(255,237,213,0.5)"
+                            else:
+                                badge_html = f'<span class="badge badge-red">{txt_dias}</span>'
+                                border_color = "#ef4444"
+                                border_bg = "rgba(254,242,242,0.5)"
+                            rep_display = f'<span class="rep-box">REP: {rep}</span>'
+                            fecha_display = f'<span class="rep-box">Fecha: {fec}</span>' if fec else '<span class="rep-box">Fecha: N/A</span>'
+                            estado_display = f'<span class="rep-box" style="background:#0f172a; color:white; border-color:#0f172a;">{estado_sel}</span>'
+                            st.markdown(f"<div class=\"glass\" style=\"padding:16px 20px; border-left:5px solid {border_color}; background: {border_bg} !important; margin-bottom:10px;\"><div style=\"display:flex; justify-content:space-between; align-items:flex-start; gap:12px;\"><div style=\"flex:1;\"><div style=\"font-size:1.05rem; font-weight:800;\">{suc_sel} - REPORTE {idx_rep+1}/{len(reps_list)}</div><div style=\"display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;\">{estado_display} {rep_display} {fecha_display}</div><div style=\"margin-top:10px; background:white; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:0.85rem;\"><b>FALLA:</b> {obs[:300]}</div></div><div style=\"flex-shrink:0;\">{badge_html}</div></div></div>", unsafe_allow_html=True)
+                            c1, c2 = st.columns([4,1])
                             with c2:
-                                if st.button(f"CERRAR {rep} [{idx_rep+1}]", key=f"cerrar_{estado_sel}_{suc_sel}_{idx_rep}_{rep}"):
+                                if st.button(f"CERRAR {rep}", key=f"cerrar_{estado_sel}_{suc_sel}_{idx_rep}_{rep}", type="primary", use_container_width=True):
                                     st.session_state['delete_target'] = {"estado": estado_sel, "sucursal": suc_sel, "rep": rep, "fec": fec, "obs": obs, "tel": tel_raw, "indice": idx_rep}
                                     if not st.session_state.get('admin_auth'):
                                         st.session_state['show_delete_login'] = True
@@ -856,13 +890,13 @@ if not st.session_state.get('show_add_form', False):
                                         st.session_state['show_delete_confirm'] = True
                                         st.session_state['show_delete_login'] = False
                                     st.rerun()
+                    # Telefonos (una sola vez)
                     if tels:
-                        st.markdown(f'<div style="margin-top:10px; font-weight:700;">Lineas Telmex ({len(tels)}) - {suc_sel}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div style="margin-top:12px; font-weight:700; font-size:0.85rem;">Lineas Telmex ({len(tels)}) - {suc_sel}</div>', unsafe_allow_html=True)
                         cols = st.columns(3)
                         for i, t in enumerate(tels):
                             with cols[i%3]:
-                                st.markdown(f'<div style="background:white; border:1px solid #e2e8f0; padding:8px; border-radius:8px; margin:4px 0;">{t}</div>', unsafe_allow_html=True)
-
+                                st.markdown(f'<div style="background:white; border:1px solid #e2e8f0; padding:8px 12px; border-radius:10px; margin:4px 0; font-size:0.85rem;">{t}</div>', unsafe_allow_html=True)
 
 
 # --- MODAL LOGIN CERRAR REPORTE ---
